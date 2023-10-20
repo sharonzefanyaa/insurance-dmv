@@ -1,0 +1,422 @@
+---
+title: "FinalProject"
+author: "Kelompok 7"
+date: '2022-05-24'
+output: html_document
+---
+
+Dataset Taken from Kaggle : <https://www.kaggle.com/datasets/mirichoi0218/insurance>
+
+Columns
+
+age: Primary beneficiary's age
+
+sex: Insurance contractor's gender, female, male
+
+bmi: Body mass index, providing an understanding of body, weights that are relatively high or low relative to height, objective index of body weight (kg / m \^ 2) using the ratio of height to weight, ideally 18.5 to 24.9
+
+children: Number of children covered by health insurance / Number of dependents
+
+smoker: If the person is smoking or not.
+
+region: the beneficiary's residential area in the US, northeast, southeast, southwest, northwest.
+
+charges: Individual medical costs billed by health insurance
+
+We want to predict what is the factors that makes individual medical costs(Predictor) increased or decreased based on the other independent variable.
+
+**Read Data and Preprocessing Data**
+
+```{r}
+options(warn=-1)
+library(tidyverse)
+library(dplyr)
+library(ggcorrplot)
+library(gridExtra)
+library(caret)
+```
+
+```{r}
+
+df<-read.csv("https://raw.githubusercontent.com/RaiyenDK/AOL-DMV/main/insurance.csv")
+head(df)
+```
+
+```{r}
+dim(df)
+
+```
+
+This dataset has 1338 datas and 7 attributes.
+
+```{r}
+colSums(is.na(df))
+```
+
+There is no NA in every attributes in this dataset
+
+```{r}
+sum(duplicated(df))
+```
+
+There is 1 redundant or duplicated data in this dataset, so we could remove it from our dataset
+
+```{r}
+df <- unique(df)
+sum(duplicated(df))
+```
+
+Now, our dataset only store unique or distinct datas and doesn't have duplicated data
+
+```{r}
+str(df)
+```
+
+This Dataset has varieties of datatype attributes - sex,smoker, and region are characters/categoricals- bmi and charges are numericals - age and children are integers.
+
+**Plotting**
+
+**Univariate Analysis and Bivariate Analysis**
+
+```{r}
+plot1 <- ggplot(df,aes(x = age))+geom_histogram(fill='indianred3',col='white',binwidth=5) + labs(title="People by Ages",x='Age',y='Population')
+
+
+plot2 <- ggplot(df,aes(x=bmi))+geom_histogram(fill='cornflowerblue',col='white',binwidth=5) +labs(title = 'BMI data of People',x='bmi',y='Population')
+
+plot3 <- ggplot(df,aes(x = region)) + geom_bar(fill='lightgreen',col='white')+labs(title="People by Region",x='Region',y='Population')
+
+plot4 <- ggplot(df , aes(x = charges)) + geom_histogram(fill='coral',col='white')+labs(title='Insurance Charges of People',x='Charges',y='Population')
+
+grid.arrange(plot1,plot2,plot3,plot4,nrow=2)
+```
+
+Explanation:
+
+-   Most people in this dataset has a range of age around 18-23
+
+-   The histogram of BMI showed a normal distribution pattern with curve bell shape. BMI of people mostly vary in range 22,5-37,5
+
+-   The spread of people of one region is same compared to other region. Southeast region is just a little bit higher more than other
+
+-   The Insurance Charges mostly has a range of 0-15,000 and the histogram showed that the Charges data is skewed to the left.
+
+**Bivariate Analysis**
+```{r}
+df
+```
+```{r}
+library(dplyr)
+options(scipen=10000)
+
+
+region_charges = df %>% 
+                group_by(region) %>% 
+                summarise(charges = sum(charges)) %>%
+                ggplot(., aes(x=region, y=charges)) + geom_bar(stat="identity", fill='yellow',col='black')+labs(title="Regions Charges",x='Region',y='Charges') + theme(axis.text.x = element_text(angle = 45))
+
+smoker_charges = df %>% 
+                group_by(smoker) %>% 
+                summarise(charges = sum(charges)) %>%
+                ggplot(., aes(x=smoker, y=charges)) + geom_bar(stat="identity", fill='lightgreen',col='black', width=1)+labs(title="Charges for Smoker vs Non-smoker",x='Smoker',y='Charges')
+
+
+gender_charges = df %>% 
+                group_by(sex) %>% 
+                summarise(charges = sum(charges)) %>%
+                ggplot(., aes(x=sex, y=charges)) + geom_bar(stat="identity", fill='lightblue',col='black', width=1)+labs(title="Charges for M vs F",x='Genders',y='Charges') 
+
+grid.arrange(region_charges, smoker_charges, gender_charges, ncol=3)
+
+
+```
+
+
+```{r}
+plot1<-ggplot(df,aes(age,charges))+geom_point(color = 'steelblue',alpha=1.2,size=1.2)+labs(title='Age vs Charges')
+
+plot2<-ggplot(df,aes(smoker,charges))+geom_violin(fill='lightgreen')+geom_boxplot(width=.2,fill='yellow',outlier.color='orange',outlier.size=1.5)+labs(title='Smoking vs Charges')
+
+grid.arrange(plot1,plot2,nrow=1)
+```
+
+Explanation:
+
+-   As age goes up, the insurance charges is trending up too
+
+-   People who smoke got more insurance charges compared to people who don't smoke
+
+**Multivariate Analysis**
+
+```{r}
+dfnumerical = df[c(1,3,4,7)]
+
+corr<- cor(dfnumerical,method = 'spearman')
+ggcorrplot(corr,lab=TRUE)+labs(title='Correlation Plot of Numerical Variable')
+```
+
+Based on the correlation plot, we can say that:
+
+-   There is no multicollinearity between predictor variables, that means every predictor variables have weak correlation between each other
+
+-   The correlation between bmi and children to charges is weak , that means both variables doesn't move together
+
+-   The correlation between age and charges is moderately strong, that means when age goes up, there is a trend that charges goes up too, but there is also randomness that affect one or both variables, that maybe caused by other variables
+
+-   The Conclusion is : The numerical predictor doesn't have a strong direct relationship to target variables, but age variables seems noticeable to have a moderate positive relationship with target variables.
+
+**Detect Outliers**
+
+```{r}
+ThreeSigma <- function(x, t = 3){
+
+ mu <- mean(x, na.rm = TRUE)
+ sig <- sd(x, na.rm = TRUE)
+ if (sig == 0){
+ message("All non-missing x-values are identical")
+}
+ up <- mu + t * sig
+ down <- mu - t * sig
+ out <- list(up = up, down = down)
+ return(out)
+ }
+
+Hampel <- function(x, t = 3){
+
+ mu <- median(x, na.rm = TRUE)
+ sig <- mad(x, na.rm = TRUE)
+ if (sig == 0){
+ message("Hampel identifer implosion: MAD scale estimate is zero")
+ }
+ up <- mu + t * sig
+ down <- mu - t * sig
+ out <- list(up = up, down = down)
+ return(out)
+ }
+   
+BoxplotRule<- function(x, t = 1.5){
+
+ xL <- quantile(x, na.rm = TRUE, probs = 0.25, names = FALSE)
+ xU <- quantile(x, na.rm = TRUE, probs = 0.75, names = FALSE)
+ Q <- xU - xL
+ if (Q == 0){
+ message("Boxplot rule implosion: interquartile distance is zero")
+ }
+ up <- xU + t * Q
+ down <- xL - t * Q
+ out <- list(up = up, down = down)
+ return(out)
+}   
+
+ExtractDetails <- function(x, down, up){
+
+ outClass <- rep("N", length(x))
+ indexLo <- which(x < down)
+ indexHi <- which(x > up)
+ outClass[indexLo] <- "L"
+ outClass[indexHi] <- "U"
+ index <- union(indexLo, indexHi)
+ values <- x[index]
+ outClass <- outClass[index]
+ nOut <- length(index)
+ maxNom <- max(x[which(x <= up)])
+ minNom <- min(x[which(x >= down)])
+ outList <- list(nOut = nOut, lowLim = down,
+ upLim = up, minNom = minNom,
+ maxNom = maxNom, index = index,
+ values = values,
+ outClass = outClass)
+ return(outList)
+}
+
+FindOutliers <- function(x, t3 = 3, tH = 3, tb = 1.5){
+ threeLims <- ThreeSigma(x, t = t3)
+ HampLims <- Hampel(x, t = tH)
+ boxLims <- BoxplotRule(x, t = tb)
+
+ n <- length(x)
+ nMiss <- length(which(is.na(x)))
+
+ threeList <- ExtractDetails(x, threeLims$down, threeLims$up)
+ HampList <- ExtractDetails(x, HampLims$down, HampLims$up)
+ boxList <- ExtractDetails(x, boxLims$down, boxLims$up)
+
+ sumFrame <- data.frame(method = "ThreeSigma", n = n,
+ nMiss = nMiss, nOut = threeList$nOut,
+ lowLim = threeList$lowLim,
+ upLim = threeList$upLim,
+ minNom = threeList$minNom,
+ maxNom = threeList$maxNom)
+ upFrame <- data.frame(method = "Hampel", n = n,
+ nMiss = nMiss, nOut = HampList$nOut,
+ lowLim = HampList$lowLim,
+ upLim = HampList$upLim,
+ minNom = HampList$minNom,
+ maxNom = HampList$maxNom)
+ sumFrame <- rbind.data.frame(sumFrame, upFrame)
+ upFrame <- data.frame(method = "BoxplotRule", n = n,
+ nMiss = nMiss, nOut = boxList$nOut,
+ lowLim = boxList$lowLim,
+ upLim = boxList$upLim,
+ minNom = boxList$minNom,
+ maxNom = boxList$maxNom)
+ sumFrame <- rbind.data.frame(sumFrame, upFrame)
+
+ threeFrame <- data.frame(index = threeList$index,
+ values = threeList$values,
+ type = threeList$outClass)
+ HampFrame <- data.frame(index = HampList$index,
+ values = HampList$values,
+ type = HampList$outClass)
+ boxFrame <- data.frame(index = boxList$index,
+ values = boxList$values,
+ type = boxList$outClass)
+ outList <- list(summary = sumFrame, threeSigma = threeFrame,
+ Hampel = HampFrame, boxplotRule = boxFrame)
+ return(outList)
+}
+```
+
+```{r}
+fullSummary <- FindOutliers(df$bmi)
+fullSummary$summary
+```
+
+```{r}
+layout(matrix(c(1,1,1,2,2,2,3,3,3),nrow=1))
+
+plot(df$bmi,xlab='Record Number',ylab='bmi',main='Three Sigma Edit Rule',col='#2E8B57',ylim=c(0,60),cex.lab=1.5,cex.main=1.5,font.lab=3,font.main=4)
+#Line for upeer limit and lower limit of data
+abline(h=mean(df$bmi)+3*(sd(df$bmi)),lty='dashed',col='blue',lwd=2)
+abline(h=mean(df$bmi)-3*(sd(df$bmi)),lty='dashed',col='blue',lwd=2)
+
+
+plot(df$bmi,xlab='Record Number',ylab='bmi',main='Hampel Identifier',col='#9ACD32',ylim=c(0,60),cex.lab=1.5,cex.main=1.5,font.lab=3,font.main=4)
+#Line for Upper limit and lower limit of data
+abline(h=median(df$bmi)+3*(mad(df$bmi)),lty='dashed',col='blue',lwd=2)
+abline(h=median(df$bmi)-3*(mad(df$bmi)),lty='dashed',col='blue',lwd=2)
+
+boxplot(df$bmi,xlab='Record Number',ylab='bmi',main='Boxplot Rule',col='#9ACD32',ylim=c(0,60),cex.lab=1.5,cex.main=1.5,font.lab=3,font.main=4)
+```
+
+Explanation:
+
+Based on the data point and the visualization, we can say that:
+
+-   Upper limit and Lower Limit of Three Sigma and Hampel Identifier is almost identical, because bmi data is normally distributed, mean and median is almost identical.
+
+-   Outlier Detection using boxplot has a higher lower limit and lower upper limit rather than the other two outlier detection
+
+-   Three Sigma Rule and Hampel Identifier are more preferred to use, because they don't detect the outlier too extreme compared than boxplot
+
+**Modelling**
+
+Preparation
+
+Because in the univariate analysis, the target variable(Charges) has a very left-skewed distribution, we try to make the target variable has a normal distribution to make a better fitting by using natural log of the target variable
+
+```{r}
+df$logcharges <- log(df$charges)
+
+newdf <- df[c(1:6,8)]
+
+plot1 <- ggplot(newdf,aes(x=logcharges))+geom_histogram(fill='lightgreen',col='white',binwidth=0.3)+labs(title='Histogram of log(charges)')
+
+plot2 <- ggplot(newdf,aes(x=logcharges))+geom_density(fill='indianred3')+labs(title='Density plot of log(charges)')
+
+grid.arrange(plot1,plot2,nrow=1)
+
+
+```
+
+Now, our target variable is more normally distributed, shown by a rough-bell shape of the histogram and density plot
+
+**Divide Training Set and Testing Set**
+
+```{r}
+set.seed(1)
+validationindex <- createDataPartition(newdf$logcharges, p=0.80, list =FALSE)
+
+#Create Validation Set by subtract real Dataset by trainingset
+validationset <- newdf[-validationindex,]
+trainingset<- newdf[validationindex,]
+```
+
+**Fitting model Using multiple linear regression**
+
+```{r}
+fit1 <-lm(logcharges~.,data=trainingset)
+
+summary(fit1)
+```
+
+The sex variables seems not having a significant impact on the model, so we omit it from the model and start a new fitting
+
+```{r}
+fit2<-lm(logcharges~age+bmi+children+smoker+region,data=trainingset)
+
+summary(fit2)
+```
+
+After the removal of sex variables, the F-statistics increased around 60, that means good for our model. Now, we will try to remove region variables, as not every factor has big impact to the model
+
+```{r}
+fit3<-lm(logcharges~age+bmi+children+smoker,data=trainingset)
+
+summary(fit3)
+```
+
+After removing Region variable, we can see that F-statistics almost doubled from the initial F-statistic and the Multiple R-squared , RSE, and Adjusted R-squared doesn't get a significant impact. So, we decided to use fit3 as our final model.
+
+Equation : 7 + 0.035\*age + 0,01\*bmi + 0,1\*children + 1,54\*smokeryes
+
+**Check the Goodness of the model**
+
+-Check MSE
+
+```{r}
+prediction <- predict(fit3,validationset)
+MeanSquaredError <- mean((validationset$logcharges - prediction)^2)
+print(MeanSquaredError)
+```
+
+By looking at the Mean Squared Error, we could conclude that this fit is good enough to be regression model based on this dataset
+
+As, the lower the MSE, the closer we get the best fit line
+
+-Check the Summary Plot
+
+```{r}
+par(mfrow=c(2,2))
+plot(fit3)
+par(mfrow = c(1,1))
+```
+
+1.  In Residual vs Fitted plot, it shows that most of the data has a residual that approximately equal for the predicted value that fulfill the homoscedasticity assumption.
+2.  In Normal Q-Q, it shows that data points appointed near around straight line(normally distributed), so we can said that this regression model fulfill normality assumption
+3.  In Scale-Location , it just shows that most of root of standarized residuals has approximately equal value for the predicted value (the differences is that it uses square root of standarized residuals instead of just residuals like Residual vs Fitted plot)
+4.  In Residuals vs Leverage plot , we don't see any data point outside Cook's distance
+
+**Test the model to the validation set**
+
+```{r}
+validationset$predicted <- predict(fit3, validationset)
+finalprediction <- data.frame(validationset$logcharges, validationset$predicted)
+names(finalprediction) <- c ("logcharges", "Predicted")
+correlation_model <- cor(finalprediction)
+correlation_model
+
+```
+
+We got an accuracy of 88,7% when we put our model to the testing/vaidation set, which is pretty good
+
+```{r}
+#For addition, we want to add residual column contains differences between predicted charges and actual charges
+finalprediction$Residual = finalprediction$logcharges - finalprediction$Predicted
+
+#Plotting the Residual to see the distribution
+
+ggplot(finalprediction,aes(x=Residual))+geom_histogram(fill='lightgreen',col='white',binwidth=0.05)
+```
+
+And lastly, the residual of our model is roughly has distributed residuals value around zero, which is a factor to have a good linear model.
